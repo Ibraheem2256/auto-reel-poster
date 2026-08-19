@@ -17,3 +17,13 @@ npm-debug.log*
 /scripts/_fix-*.mjs
 /scripts/_test-*.mjs
 /scripts/_check-jobs.ts
+.pgdata
+*.log
+*.mp4
+*.wav
+graph-debug*.ts
+/models/
+/music/
+*.mp3
+*.onnx
+*.tflite
