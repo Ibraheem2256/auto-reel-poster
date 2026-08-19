@@ -1,0 +1,85 @@
+
+> auto-reel-poster@0.1.0 dev
+> next dev
+
+   ▲ Next.js 15.5.23
+   - Local:        http://localhost:3000
+   - Network:      http://192.168.1.42:3000
+   - Environments: .env
+
+ ✓ Starting...
+ ✓ Ready in 23.5s
+ ○ Compiling /api/cron/[job] ...
+ ✓ Compiled /api/cron/[job] in 14.5s (584 modules)
+ POST /api/cron/publish 200 in 203ms
+{"ts":"2026-08-18T14:40:52.637Z","level":"info","message":"video_analysis_done","videoId":"cmsw9qnnq001ha36eutrq2zlj"}
+ POST /api/cron/publish 200 in 371ms
+ ○ Compiling /middleware ...
+ ✓ Compiled /middleware in 4.6s (223 modules)
+ ○ Compiling /queue ...
+ ✓ Compiled /queue in 15.1s (1012 modules)
+ POST /api/cron/check-status 200 in 11314ms
+ POST /api/cron/publish 200 in 17390ms
+ GET /queue 200 in 20339ms
+{"ts":"2026-08-18T14:43:06.373Z","level":"info","message":"job_published","jobId":"cmsyrjs71000d147u2yrkrxko","platform":"YOUTUBE","videoId":"cmsw9qnnq001ha36eutrq2zlj"}
+ POST /api/cron/publish 200 in 200312ms
+ ○ Compiling /api/notifications ...
+ ✓ Compiled /api/notifications in 4.8s (1031 modules)
+ GET /api/automation 200 in 6332ms
+ GET /api/notifications 200 in 6395ms
+ GET /api/videos/queue 200 in 6672ms
+ GET /api/videos/queue 200 in 408ms
+{"ts":"2026-08-18T14:43:26.997Z","level":"info","message":"video_analysis_done","videoId":"cmsw9qnom001ta36e1089ls2q"}
+ POST /api/cron/publish 200 in 74ms
+{"ts":"2026-08-18T14:43:58.462Z","level":"info","message":"job_published","jobId":"cmsykbipn000113nogkqifsdp","platform":"YOUTUBE","videoId":"cmsw9qnom001ta36e1089ls2q"}
+ POST /api/cron/retry 200 in 58448ms
+ POST /api/cron/publish 200 in 71ms
+ POST /api/cron/publish 200 in 64ms
+ POST /api/cron/publish 200 in 43ms
+ POST /api/cron/publish 200 in 43ms
+ POST /api/cron/check-status 200 in 43ms
+ POST /api/cron/retry 200 in 45ms
+{"ts":"2026-08-18T14:48:05.984Z","level":"info","message":"drive_scan_complete","workspaceId":"cmsw7037n0002531g6z8m6sm4","folderId":"1zhVtkuyNeuRVdKfloDRo2E4txrwyJ_iz","found":52,"newVideos":0,"updated":0,"deleted":0,"invalid":0}
+ POST /api/cron/scan 200 in 1068ms
+ POST /api/cron/publish 200 in 68ms
+ POST /api/cron/publish 200 in 61ms
+ POST /api/cron/publish 200 in 58ms
+ POST /api/cron/publish 200 in 51ms
+ POST /api/cron/publish 200 in 52ms
+ POST /api/cron/check-status 200 in 53ms
+ POST /api/cron/retry 200 in 50ms
+ POST /api/cron/publish 200 in 102ms
+ ○ Compiling /notifications ...
+ ✓ Compiled /notifications in 5.3s (1027 modules)
+ GET /notifications 200 in 6271ms
+ ○ Compiling /api/notifications ...
+ ✓ Compiled /api/notifications in 768ms (742 modules)
+ GET /api/notifications 200 in 1775ms
+ GET /api/notifications 200 in 92ms
+ POST /api/notifications 200 in 154ms
+ GET /api/notifications 200 in 173ms
+ GET /api/notifications 200 in 86ms
+ ○ Compiling /dashboard ...
+ ✓ Compiled /dashboard in 4.9s (1051 modules)
+ GET /queue 200 in 2295ms
+ GET /dashboard 200 in 5834ms
+ ○ Compiling /api/videos/queue ...
+ ✓ Compiled /api/videos/queue in 2.4s (756 modules)
+ POST /api/cron/publish 200 in 2683ms
+ GET /api/videos/queue 200 in 4047ms
+ GET /api/videos/queue 200 in 332ms
+ GET /api/videos/queue 200 in 93ms
+ ○ Compiling /api/videos/[id]/schedule ...
+ ✓ Compiled /api/videos/[id]/schedule in 3.7s (1056 modules)
+ DELETE /api/videos/cmsw9qnod001pa36e5q2mosk3/schedule 200 in 7566ms
+ GET /api/videos/queue 200 in 221ms
+ ○ Compiling /schedules ...
+ ✓ Compiled /schedules in 12.1s (1088 modules)
+ POST /api/cron/publish 200 in 2536ms
+ GET /schedules 200 in 12936ms
+ GET /schedules 200 in 138ms
+ ○ Compiling /api/schedules ...
+ ✓ Compiled /api/schedules in 2.6s (1087 modules)
+ GET /api/schedules 200 in 3232ms
+ GET /api/schedules 200 in 50ms
+[?25h

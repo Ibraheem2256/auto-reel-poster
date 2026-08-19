@@ -1,0 +1,45 @@
+
+> auto-reel-poster@0.1.0 cron:daemon
+> tsx scripts/cron-daemon.ts
+
+[7:37:44 pm] Cron daemon started -> http://localhost:3000
+[7:37:44 pm] publish every 60s · scan every 10min · check/retry every 5min
+[7:37:44 pm] cleanup & token-check hourly. Press Ctrl+C to stop.
+[7:37:46 pm] publish ERROR: fetch failed
+[7:37:52 pm] check-status ERROR: fetch failed
+[7:37:59 pm] retry ERROR: fetch failed
+[7:38:04 pm] scan ERROR: fetch failed
+[7:38:29 pm] token-check ERROR: fetch failed
+[7:38:44 pm] cleanup ERROR: fetch failed
+[7:38:46 pm] publish ERROR: fetch failed
+[7:40:46 pm] publish OK (261ms): {"ok":true,"processed":0,"failed":0}
+[7:41:46 pm] publish OK (394ms): {"ok":true,"processed":0,"failed":0}
+[7:43:04 pm] check-status OK (11592ms): {"ok":true,"resolved":0}
+[7:43:04 pm] publish OK (18337ms): {"ok":true,"processed":0,"failed":0}
+[7:43:06 pm] publish OK (200366ms): {"ok":true,"processed":1,"failed":0}
+[7:43:46 pm] publish OK (86ms): {"ok":true,"processed":0,"failed":0}
+[7:43:58 pm] retry OK (58570ms): {"ok":true,"processed":1}
+[7:44:46 pm] publish OK (81ms): {"ok":true,"processed":0,"failed":0}
+[7:45:46 pm] publish OK (82ms): {"ok":true,"processed":0,"failed":0}
+[7:46:46 pm] publish OK (57ms): {"ok":true,"processed":0,"failed":0}
+[7:47:46 pm] publish OK (50ms): {"ok":true,"processed":0,"failed":0}
+[7:47:53 pm] check-status OK (51ms): {"ok":true,"resolved":0}
+[7:47:59 pm] retry OK (59ms): {"ok":true,"processed":0}
+[7:48:06 pm] scan OK (1078ms): {"ok":true,"scan":{"scanned":1,"failed":0},"queued":0,"assigned":0}
+[7:48:46 pm] publish OK (86ms): {"ok":true,"processed":0,"failed":0}
+[7:49:46 pm] publish OK (73ms): {"ok":true,"processed":0,"failed":0}
+[7:50:46 pm] publish OK (82ms): {"ok":true,"processed":0,"failed":0}
+[7:51:46 pm] publish OK (69ms): {"ok":true,"processed":0,"failed":0}
+[7:52:46 pm] publish OK (71ms): {"ok":true,"processed":0,"failed":0}
+[7:52:53 pm] check-status OK (70ms): {"ok":true,"resolved":0}
+[7:52:59 pm] retry OK (72ms): {"ok":true,"processed":0}
+[7:53:46 pm] publish OK (120ms): {"ok":true,"processed":0,"failed":0}
+[7:54:49 pm] publish OK (2917ms): {"ok":true,"processed":0,"failed":0}
+[7:55:49 pm] publish OK (2846ms): {"ok":true,"processed":0,"failed":0}
+[7:56:46 pm] publish ERROR: fetch failed
+[7:57:46 pm] publish ERROR: fetch failed
+[7:57:52 pm] check-status ERROR: fetch failed
+[7:57:59 pm] retry ERROR: fetch failed
+[7:58:04 pm] scan ERROR: fetch failed
+[7:58:46 pm] publish ERROR: fetch failed
+[7:59:57 pm] publish OK (11471ms): {"ok":true,"processed":0,"failed":0}

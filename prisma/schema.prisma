@@ -1,0 +1,431 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Platform {
+  TIKTOK
+  YOUTUBE
+  INSTAGRAM
+  FACEBOOK
+}
+
+enum VideoStatus {
+  PENDING // detected, not yet validated
+  INVALID // failed validation
+  VALIDATED // passed validation, waiting to be queued
+  QUEUED // in the publish queue
+  SCHEDULED // publish time assigned
+  UPLOADING // currently being published
+  PUBLISHED // published on all selected platforms
+  PARTIALLY_PUBLISHED // published on some platforms, others failed
+  FAILED // failed on all selected platforms
+  SKIPPED // skipped (duplicate / automation off / user choice)
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  SUCCESS
+  FAILED
+  RETRYING
+  SKIPPED
+  CANCELLED
+}
+
+enum AccountStatus {
+  CONNECTED
+  EXPIRED
+  REVOKED
+  ERROR
+}
+
+enum DriveSourceStatus {
+  CONNECTED
+  ERROR
+  DISCONNECTED
+}
+
+enum ScheduleType {
+  FIXED_TIMES
+  INTERVAL
+  PLATFORM_SPECIFIC
+  BEST_TIMES
+}
+
+enum QueueOrder {
+  OLDEST_FIRST
+  NEWEST_FIRST
+  RANDOM
+}
+
+enum TokenScope {
+  DRIVE
+  YOUTUBE
+  INSTAGRAM
+  FACEBOOK
+  TIKTOK
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum NotificationType {
+  ACCOUNT_DISCONNECTED
+  TOKEN_EXPIRED
+  VIDEO_PUBLISHED
+  PUBLISH_FAILED
+  DRIVE_UNAVAILABLE
+  QUEUE_EMPTY
+  COPYRIGHT_ISSUE
+  SYSTEM
+}
+
+enum SubscriptionStatus {
+  FREE
+  ACTIVE
+  CANCELED
+  PAST_DUE
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String?
+  image         String?
+  passwordHash  String?
+  emailVerified DateTime?
+  role          UserRole @default(USER)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  workspaces    Workspace[]
+  accounts      Account[]
+  sessions      Session[]
+  auditLogs     AuditLog[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Workspace {
+  id        String   @id @default(cuid())
+  ownerId   String
+  name      String   @default("My Workspace")
+  timezone  String   @default("Asia/Karachi")
+  queueOrder QueueOrder @default(OLDEST_FIRST)
+
+  // Automation switches
+  automationEnabled Boolean  @default(false)
+  paused           Boolean  @default(false)
+
+  // Captions & hashtags (JSON: { default, platforms: { YOUTUBE: "...", ... } })
+  captions   Json?
+  hashtags   Json?
+  // YouTube title mode: FILENAME | CUSTOM | AI
+  titleMode  String   @default("FILENAME")
+  customTitle String?
+
+  // Optional AI toggles
+  aiEnabled  Boolean  @default(false)
+  aiSettings Json?    @default("{}")
+
+  // Auto-edit videos before publishing (9:16 crop, hook text, sound).
+  autoEditEnabled Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  owner          User             @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  driveSources   DriveSource[]
+  videos         Video[]
+  socialAccounts SocialAccount[]
+  oauthTokens    OAuthToken[]
+  schedules      Schedule[]
+  scheduledPosts ScheduledPost[]
+  platformJobs   PlatformJob[]
+  notifications  Notification[]
+  subscriptions  Subscription[]
+  auditLogs      AuditLog[]
+  performanceMetrics PerformanceMetric[]
+}
+
+model DriveSource {
+  id          String   @id @default(cuid())
+  workspaceId String
+  folderId    String
+  folderName  String?
+  status      DriveSourceStatus @default(CONNECTED)
+  lastError   String?  @db.Text
+  lastScanAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  videos    Video[]
+
+  @@unique([workspaceId, folderId])
+}
+
+model Video {
+  id            String   @id @default(cuid())
+  workspaceId   String
+  driveSourceId String?
+  driveFileId   String   @unique
+  fileName      String
+  title         String?
+  mimeType      String?
+  fileSize      BigInt?
+  modifiedTime  DateTime?
+  contentHash   String?
+  thumbnailUrl  String?
+  durationMs    Int?
+  width         Int?
+  height        Int?
+  status        VideoStatus @default(PENDING)
+  invalidReason String?  @db.Text
+  editSpec      Json? // per-video editing spec (see lib/editor-spec.ts)
+  detectedAt    DateTime @default(now())
+  scheduledAt   DateTime?
+  publishedAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  workspace     Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  driveSource   DriveSource?   @relation(fields: [driveSourceId], references: [id], onDelete: SetNull)
+  scheduledPost ScheduledPost?
+  platformJobs  PlatformJob[]
+  platformPosts PlatformPost[]
+  performanceMetrics PerformanceMetric[]
+
+  @@index([workspaceId, status])
+  @@index([driveSourceId, status])
+  @@index([driveFileId, modifiedTime])
+}
+
+model SocialAccount {
+  id                 String        @id @default(cuid())
+  workspaceId        String
+  platform           Platform
+  platformAccountId  String
+  accountName        String
+  avatarUrl          String?
+  status             AccountStatus @default(CONNECTED)
+  scopes             String?       @db.Text
+  expiresAt          DateTime?
+  lastError          String?       @db.Text
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  workspace  Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  oauthToken OAuthToken?
+  jobs       PlatformJob[]
+
+  @@unique([workspaceId, platform, platformAccountId])
+}
+
+model OAuthToken {
+  id              String      @id @default(cuid())
+  workspaceId     String
+  scope           TokenScope
+  socialAccountId String?     @unique
+  accessToken     String      @db.Text
+  refreshToken    String?     @db.Text
+  expiresAt       DateTime?
+  tokenType       String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  socialAccount SocialAccount? @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  workspace     Workspace?     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model Schedule {
+  id          String       @id @default(cuid())
+  workspaceId String
+  name        String       @default("Default Schedule")
+  timezone    String       @default("Asia/Karachi")
+  scheduleType ScheduleType @default(FIXED_TIMES)
+  postsPerDay Int          @default(3)
+  times       Json // ["10:00", "14:00", "19:00"]
+  platforms   Json // ["TIKTOK","YOUTUBE","INSTAGRAM","FACEBOOK"]
+  intervalHours Int? // for INTERVAL mode, minimum gap between posts
+  platformTimes Json? // for PLATFORM_SPECIFIC mode: { TIKTOK: ["10:00","16:00"], ... }
+  enabled     Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  scheduledPosts ScheduledPost[]
+}
+
+model ScheduledPost {
+  id          String   @id @default(cuid())
+  workspaceId String
+  videoId     String   @unique
+  scheduleId  String?
+  scheduledAt DateTime
+  status      VideoStatus @default(SCHEDULED)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  video     Video       @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  schedule  Schedule?   @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  jobs      PlatformJob[]
+
+  @@index([workspaceId, scheduledAt])
+  @@index([workspaceId, status])
+}
+
+model PlatformJob {
+  id              String      @id @default(cuid())
+  workspaceId     String
+  videoId         String
+  socialAccountId String?
+  scheduledPostId String?
+  platform        Platform
+  scheduledAt     DateTime
+  status          JobStatus   @default(PENDING)
+  attemptCount    Int         @default(0)
+  nextRetryAt     DateTime?
+  platformPostId  String?
+  platformPostUrl String?
+  errorCode       String?
+  errorMessage    String?     @db.Text
+  retryable       Boolean     @default(true)
+  startedAt       DateTime?
+  publishedAt     DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  workspace     Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  video         Video          @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  socialAccount SocialAccount? @relation(fields: [socialAccountId], references: [id], onDelete: SetNull)
+  scheduledPost ScheduledPost? @relation(fields: [scheduledPostId], references: [id], onDelete: SetNull)
+  platformPosts PlatformPost[]
+
+  @@index([workspaceId, status, scheduledAt])
+  @@index([status, scheduledAt])
+  @@index([status, nextRetryAt])
+}
+
+model PerformanceMetric {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  videoId         String
+  platform        Platform
+  platformPostId  String
+  views           Int      @default(0)
+  likes           Int      @default(0)
+  comments        Int      @default(0)
+  shares          Int      @default(0)
+  fetchedAt       DateTime @default(now())
+  createdAt       DateTime @default(now())
+
+  video     Video     @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, platform, platformPostId])
+  @@index([workspaceId, fetchedAt])
+  @@index([videoId])
+}
+
+model PlatformPost {
+  id             String   @id @default(cuid())
+  platformJobId  String
+  videoId        String
+  platform       Platform
+  platformPostId String
+  platformPostUrl String?
+  publishedAt    DateTime @default(now())
+  metadata       Json?
+
+  platformJob PlatformJob @relation(fields: [platformJobId], references: [id], onDelete: Cascade)
+  video       Video       @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@index([platform, platformPostId])
+}
+
+model Notification {
+  id          String   @id @default(cuid())
+  workspaceId String
+  type        NotificationType
+  title       String
+  message     String?  @db.Text
+  read        Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, read, createdAt])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  workspaceId String?
+  userId      String?
+  action      String
+  entityType  String?
+  entityId    String?
+  metadata    Json?
+  ip          String?
+  createdAt   DateTime @default(now())
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt])
+}
+
+model Subscription {
+  id             String   @id @default(cuid())
+  workspaceId    String   @unique
+  plan           String   @default("FREE")
+  status         SubscriptionStatus @default(FREE)
+  provider       String?
+  providerRef    String?
+  currentPeriodEnd DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
