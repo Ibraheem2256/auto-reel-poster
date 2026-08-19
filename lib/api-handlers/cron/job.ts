@@ -20,15 +20,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ job
   try {
     switch (job) {
       case "scan": {
-        const scan = await scanAllSources();
-        const workspaces = await prisma.workspace.findMany({ where: { automationEnabled: true, paused: false }, select: { id: true } });
-        let queued = 0;
-        let assigned = 0;
-        for (const ws of workspaces) {
-          queued += await enqueueValidatedVideos(ws.id);
-          assigned += (await assignJobsForWorkspace(ws.id)).scheduled;
-        }
-        return NextResponse.json({ ok: true, scan, queued, assigned });
+        return NextResponse.json({ ok: true, message: "Auto-scan disabled. Use manual scan from Drive page." });
       }
       case "publish": {
         const result = await processDueJobs();
