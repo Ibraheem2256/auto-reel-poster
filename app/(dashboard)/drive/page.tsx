@@ -31,6 +31,7 @@ export default function DrivePage() {
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [scanResult, setScanResult] = useState<{ found: number; newVideos: number } | null>(null);
   const toast = useToast();
   const params = useSearchParams();
 
@@ -72,10 +73,12 @@ export default function DrivePage() {
 
   const scanNow = async () => {
     setScanning(true);
+    setScanResult(null);
     try {
       const res = await fetch("/api/drive/scan", { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Scan failed");
+      setScanResult({ found: data.result.found, newVideos: data.result.newVideos });
       toast({
         title: "Scan complete",
         description: `${data.result.found} files · ${data.result.newVideos} new videos`,
@@ -166,6 +169,27 @@ export default function DrivePage() {
                   <p className="text-xs text-muted-foreground">Last scan</p>
                 </div>
               </div>
+              {scanning && (
+                <div className="flex items-center gap-3 rounded-lg border border-brand-violet/20 bg-brand-violet/5 p-3">
+                  <div className="relative h-5 w-5">
+                    <div className="absolute inset-0 animate-ping rounded-full bg-brand-violet/30" />
+                    <div className="relative h-5 w-5 animate-spin rounded-full border-2 border-brand-violet/20 border-t-brand-fuchsia" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">Scanning Drive folder...</p>
+                    <p className="text-xs text-muted-foreground">Fetching files and detecting new videos</p>
+                  </div>
+                </div>
+              )}
+              {!scanning && scanResult && (
+                <div className="flex items-center gap-3 rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
+                  <div className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400 text-xs">✓</div>
+                  <div>
+                    <p className="text-sm font-medium">Scan complete</p>
+                    <p className="text-xs text-muted-foreground">{scanResult.found} files found · {scanResult.newVideos} new videos added</p>
+                  </div>
+                </div>
+              )}
               <div className="flex gap-2 border-t pt-3">
                 <Button onClick={scanNow} disabled={scanning} size="sm">
                   <ScanLine className="h-4 w-4" />
