@@ -14,6 +14,26 @@ import { useToast } from "@/components/ui/toast";
 import { formatRelative, formatBytes, formatDuration } from "@/lib/utils";
 import { Zap, Loader2, PencilLine, CheckCircle2, XCircle, SlidersHorizontal, CalendarClock, Trash2 } from "lucide-react";
 
+function Countdown({ target }: { target: string }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const diff = new Date(target).getTime() - now;
+  if (diff <= 0) return <span className="text-green-500 font-medium">Publishing now...</span>;
+  const d = Math.floor(diff / 86400000);
+  const h = Math.floor((diff % 86400000) / 3600000);
+  const m = Math.floor((diff % 3600000) / 60000);
+  const s = Math.floor((diff % 60000) / 1000);
+  const parts = [];
+  if (d > 0) parts.push(`${d}d`);
+  if (h > 0) parts.push(`${h}h`);
+  if (m > 0) parts.push(`${m}m`);
+  parts.push(`${s}s`);
+  return <span className="text-brand-fuchsia font-medium tabular-nums">{parts.join(" ")}</span>;
+}
+
 function toLocalInputValue(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
@@ -326,8 +346,15 @@ export default function QueuePage() {
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">{v.driveSource?.folderName ?? "-"}</td>
                     <td className="px-4 py-3 text-muted-foreground">{formatRelative(v.detectedAt)}</td>
-                    <td className="px-4 py-3 text-muted-foreground">
-                      {v.scheduledPost?.scheduledAt ? formatRelative(v.scheduledPost.scheduledAt) : "-"}
+                    <td className="px-4 py-3">
+                      {v.scheduledPost?.scheduledAt ? (
+                        <div className="flex flex-col gap-0.5">
+                          <Countdown target={v.scheduledPost.scheduledAt} />
+                          <span className="text-[10px] text-muted-foreground">{formatRelative(v.scheduledPost.scheduledAt)}</span>
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1">
@@ -408,7 +435,7 @@ export default function QueuePage() {
                   {v.scheduledPost?.scheduledAt && (
                     <>
                       <span className="text-muted-foreground/40">·</span>
-                      <span className="text-brand-fuchsia">Publishing {formatRelative(v.scheduledPost.scheduledAt)}</span>
+                      <Countdown target={v.scheduledPost.scheduledAt} />
                     </>
                   )}
                 </div>

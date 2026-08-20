@@ -123,15 +123,15 @@ export class YouTubePublisher implements SocialPublisher {
     });
 
     // 3. Title length (max 100 chars for YouTube)
-    const titleOk = title.length > 0 && title.length <= 100;
+    const titleOk = title.length > 0;
     checks.push({
       name: "Title length OK",
       passed: titleOk,
       message: titleOk
-        ? `${title.length}/100 characters`
-        : title.length === 0
-          ? "Title is empty"
-          : `Title too long (${title.length}/100 characters). Will be truncated.`,
+        ? title.length <= 100
+          ? `${title.length}/100 characters`
+          : `${title.length}/100 characters — will be truncated to 100`
+        : "Title is empty",
     });
 
     // 4. Description length (max 5000 chars for YouTube)
