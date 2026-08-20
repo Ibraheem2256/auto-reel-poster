@@ -20,7 +20,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ job
   try {
     switch (job) {
       case "scan": {
-        return NextResponse.json({ ok: true, message: "Auto-scan disabled. Use manual scan from Drive page." });
+        const scan = await scanAllSources();
+        const queued = await assignJobsForAllWorkspaces();
+        return NextResponse.json({ ok: true, scan, queued });
       }
       case "publish": {
         const result = await processDueJobs();
