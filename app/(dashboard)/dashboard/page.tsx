@@ -9,7 +9,7 @@ import { PlatformIcon } from "@/components/platform-icons";
 import { EmptyState, StatCardSkeleton, Skeleton } from "@/components/ui/states";
 import { Button } from "@/components/ui/button";
 import NextUploadTimer from "@/components/next-upload-timer";
-import { formatRelative } from "@/lib/utils";
+import { formatRelative, cleanTitle } from "@/lib/utils";
 import { PLATFORM_LABELS } from "@/lib/constants";
 import {
   Zap,
@@ -239,7 +239,7 @@ export default function DashboardPage() {
       <div className="animate-fade-in-up">
         <NextUploadTimer
           scheduledAt={nextScheduled?.scheduledPost?.scheduledAt ?? null}
-          videoName={nextScheduled ? (nextScheduled.title || nextScheduled.fileName) : null}
+          videoName={nextScheduled ? (cleanTitle(nextScheduled.title) || nextScheduled.fileName) : null}
         />
       </div>
 
@@ -476,7 +476,7 @@ export default function DashboardPage() {
                     </div>
                   )}
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{v.title || v.fileName}</p>
+                    <p className="truncate text-sm font-medium">{cleanTitle(v.title) || v.fileName}</p>
                     <p className="text-xs text-muted-foreground">
                       {v.scheduledPost?.scheduledAt
                         ? formatRelative(v.scheduledPost.scheduledAt)

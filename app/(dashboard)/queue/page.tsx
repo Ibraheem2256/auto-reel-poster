@@ -11,28 +11,8 @@ import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogContent, Di
 import { Input, Textarea } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/toast";
-import { formatRelative, formatBytes, formatDuration } from "@/lib/utils";
-import { Zap, Loader2, PencilLine, CheckCircle2, XCircle, SlidersHorizontal, CalendarClock, Trash2 } from "lucide-react";
-
-function Countdown({ target }: { target: string }) {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, []);
-  const diff = new Date(target).getTime() - now;
-  if (diff <= 0) return <span className="text-green-500 font-medium">Publishing now...</span>;
-  const d = Math.floor(diff / 86400000);
-  const h = Math.floor((diff % 86400000) / 3600000);
-  const m = Math.floor((diff % 3600000) / 60000);
-  const s = Math.floor((diff % 60000) / 1000);
-  const parts = [];
-  if (d > 0) parts.push(`${d}d`);
-  if (h > 0) parts.push(`${h}h`);
-  if (m > 0) parts.push(`${m}m`);
-  parts.push(`${s}s`);
-  return <span className="text-brand-fuchsia font-medium tabular-nums">{parts.join(" ")}</span>;
-}
+import { formatRelative, formatBytes, formatDuration, cleanTitle } from "@/lib/utils";
+import { Zap, Loader2, PencilLine, CheckCircle2, XCircle, SlidersHorizontal, CalendarClock, Trash2, AlertTriangle, Clock, Info } from "lucide-react";
 
 function toLocalInputValue(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -72,7 +52,17 @@ interface QueueVideo {
   invalidReason?: string | null;
   driveSource?: { folderName: string | null } | null;
   scheduledPost?: { scheduledAt: string } | null;
-  platformJobs?: { id: string; platform: string; status: string }[];
+  platformJobs?: {
+    id: string;
+    platform: string;
+    status: string;
+    errorCode?: string | null;
+    errorMessage?: string | null;
+    attemptCount?: number;
+    nextRetryAt?: string | null;
+    retryable?: boolean;
+    publishedAt?: string | null;
+  }[];
 }
 
 interface ContentDraft {
@@ -114,6 +104,20 @@ export default function QueuePage() {
   const [scheduleValue, setScheduleValue] = useState("");
   const [scheduling, setScheduling] = useState(false);
   const [unscheduling, setUnscheduling] = useState(false);
+
+  // Job detail dialog state.
+  interface JobDetailItem {
+    id: string;
+    platform: string;
+    status: string;
+    errorCode?: string | null;
+    errorMessage?: string | null;
+    attemptCount?: number;
+    nextRetryAt?: string | null;
+    retryable?: boolean;
+    publishedAt?: string | null;
+  }
+  const [jobDetail, setJobDetail] = useState<{ video: QueueVideo; job: JobDetailItem } | null>(null);
 
   const toast = useToast();
 
@@ -336,7 +340,7 @@ export default function QueuePage() {
                           <div className="flex h-11 w-11 items-center justify-center rounded bg-gradient-to-br from-brand-violet/20 to-brand-fuchsia/20 text-[10px] font-semibold text-brand-fuchsia">VID</div>
                         )}
                         <div className="min-w-0">
-                          <p className="max-w-[220px] truncate font-medium">{v.title || v.fileName}</p>
+                          <p className="max-w-[220px] truncate font-medium">{cleanTitle(v.title) || v.fileName}</p>
                           <p className="text-xs text-muted-foreground">
                             {v.title ? v.fileName : "Generating title…"} · {v.fileSize} · {v.durationLabel}
                           </p>
@@ -349,20 +353,35 @@ export default function QueuePage() {
                     <td className="px-4 py-3">
                       {v.scheduledPost?.scheduledAt ? (
                         <div className="flex flex-col gap-0.5">
-                          <Countdown target={v.scheduledPost.scheduledAt} />
-                          <span className="text-[10px] text-muted-foreground">{formatRelative(v.scheduledPost.scheduledAt)}</span>
+                          <span className="text-sm font-medium">{formatRelative(v.scheduledPost.scheduledAt)}</span>
                         </div>
                       ) : (
                         <span className="text-muted-foreground">-</span>
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-1">
+                      <div className="flex flex-wrap gap-1.5">
                         {v.platformJobs?.map((j) => (
-                          <span key={j.id} className="flex flex-col items-start gap-0.5">
+                          <button
+                            key={j.id}
+                            type="button"
+                            onClick={() => setJobDetail({ video: v, job: j })}
+                            className={`flex flex-col items-start gap-0.5 rounded-md border px-2 py-1 text-left transition-all hover:border-brand-violet/40 ${
+                              j.status === "FAILED" || j.status === "CANCELLED"
+                                ? "border-rose-400/30 bg-rose-500/5"
+                                : j.status === "RETRYING"
+                                ? "border-amber-400/30 bg-amber-500/5"
+                                : "border-white/[0.06] bg-white/[0.02]"
+                            }`}
+                          >
                             <PlatformBadge platform={j.platform as never} />
-                            <JobStatusBadge status={j.status as never} />
-                          </span>
+                            <span className="flex items-center gap-1">
+                              <JobStatusBadge status={j.status as never} />
+                              {(j.status === "FAILED" || j.status === "CANCELLED" || j.status === "RETRYING") && (
+                                <Info className="h-3 w-3 text-muted-foreground" />
+                              )}
+                            </span>
+                          </button>
                         ))}
                       </div>
                     </td>
@@ -405,7 +424,7 @@ export default function QueuePage() {
             {queue.map((v) => (
               <div
                 key={v.id}
-                className="rounded-xl border border-white/[0.06] bg-card/70 p-4 backdrop-blur-xl transition-all duration-200 hover:border-brand-violet/30"
+                className="rounded-xl border border-white/[0.06] bg-card/70 p-3.5 backdrop-blur-xl transition-all duration-200 hover:border-brand-violet/30"
               >
                 <div className="flex items-start gap-3">
                   {v.thumbnailUrl ? (
@@ -415,13 +434,13 @@ export default function QueuePage() {
                       alt=""
                       loading="lazy"
                       decoding="async"
-                      className="h-14 w-14 rounded-lg object-cover ring-1 ring-white/10"
+                      className="h-12 w-12 shrink-0 rounded-lg object-cover ring-1 ring-white/10"
                     />
                   ) : (
-                    <div className="flex h-14 w-14 items-center justify-center rounded-lg bg-gradient-to-br from-brand-violet/20 to-brand-fuchsia/20 text-xs font-semibold text-brand-fuchsia">VID</div>
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-brand-violet/20 to-brand-fuchsia/20 text-xs font-semibold text-brand-fuchsia">VID</div>
                   )}
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">{v.title || v.fileName}</p>
+                    <p className="truncate text-sm font-medium">{cleanTitle(v.title) || v.fileName}</p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
                       {v.fileSize} · {v.durationLabel}
                     </p>
@@ -430,12 +449,12 @@ export default function QueuePage() {
                   <VideoStatusBadge status={v.status as never} />
                 </div>
 
-                <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+                <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
                   <span>{formatRelative(v.detectedAt)}</span>
                   {v.scheduledPost?.scheduledAt && (
                     <>
                       <span className="text-muted-foreground/40">·</span>
-                      <Countdown target={v.scheduledPost.scheduledAt} />
+                      <span className="font-medium text-brand-fuchsia">{formatRelative(v.scheduledPost.scheduledAt)}</span>
                     </>
                   )}
                 </div>
@@ -443,18 +462,32 @@ export default function QueuePage() {
                 {v.platformJobs && v.platformJobs.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {v.platformJobs.map((j) => (
-                      <span key={j.id} className="flex items-center gap-1 rounded-full border border-white/[0.08] bg-white/[0.03] px-2 py-0.5 text-[10px]">
+                      <button
+                        key={j.id}
+                        type="button"
+                        onClick={() => setJobDetail({ video: v, job: j })}
+                        className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] transition-all ${
+                          j.status === "FAILED" || j.status === "CANCELLED"
+                            ? "border-rose-400/30 bg-rose-500/5"
+                            : j.status === "RETRYING"
+                            ? "border-amber-400/30 bg-amber-500/5"
+                            : "border-white/[0.08] bg-white/[0.03]"
+                        }`}
+                      >
                         <PlatformBadge platform={j.platform as never} />
                         <JobStatusBadge status={j.status as never} />
-                      </span>
+                        {(j.status === "FAILED" || j.status === "CANCELLED" || j.status === "RETRYING") && (
+                          <Info className="h-3 w-3 text-muted-foreground" />
+                        )}
+                      </button>
                     ))}
                   </div>
                 )}
 
-                <div className="mt-3 flex gap-2">
+                <div className="mt-3 grid grid-cols-3 gap-2">
                   <Link
                     href={`/editor/${v.id}`}
-                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.03] py-2 text-xs font-medium transition-colors hover:border-brand-violet/40 hover:bg-brand-violet/5"
+                    className="flex items-center justify-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.03] py-2 text-xs font-medium transition-colors hover:border-brand-violet/40 hover:bg-brand-violet/5"
                   >
                     <SlidersHorizontal className="h-3.5 w-3.5" />
                     Edit
@@ -462,7 +495,7 @@ export default function QueuePage() {
                   <Button
                     size="sm"
                     variant="outline"
-                    className="flex-1"
+                    className="w-full"
                     onClick={() => openSchedule(v)}
                     disabled={!!postingId}
                   >
@@ -471,7 +504,7 @@ export default function QueuePage() {
                   </Button>
                   <Button
                     size="sm"
-                    className="flex-1"
+                    className="w-full"
                     onClick={() => openReview(v)}
                     disabled={postingId === v.id || !!postingId}
                   >
@@ -638,35 +671,160 @@ export default function QueuePage() {
         </DialogFooter>
       </Dialog>
 
+      {/* Job detail dialog — error info */}
+      <Dialog open={!!jobDetail} onOpenChange={(o) => !o && setJobDetail(null)}>
+        <DialogHeader>
+          <DialogTitle>
+            Job details — {jobDetail?.job.platform}
+          </DialogTitle>
+          <DialogDescription>
+            {jobDetail?.video.title || jobDetail?.video.fileName}
+          </DialogDescription>
+          <DialogCloseButton onClick={() => setJobDetail(null)} />
+        </DialogHeader>
+        <DialogContent>
+          {jobDetail && (
+            <div className="space-y-4">
+              {/* Status row */}
+              <div className="flex items-center justify-between rounded-lg border border-white/[0.06] bg-white/[0.02] p-3">
+                <span className="text-sm text-muted-foreground">Status</span>
+                <JobStatusBadge status={jobDetail.job.status as never} />
+              </div>
+
+              {/* Error code */}
+              {jobDetail.job.errorCode && (
+                <div className="space-y-1.5">
+                  <Label>Error code</Label>
+                  <div className="rounded-lg border border-rose-400/20 bg-rose-500/5 p-3">
+                    <p className="font-mono text-sm font-semibold text-rose-300">{jobDetail.job.errorCode}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Error message */}
+              {jobDetail.job.errorMessage && (
+                <div className="space-y-1.5">
+                  <Label>Error message</Label>
+                  <div className="max-h-40 overflow-y-auto rounded-lg border border-rose-400/20 bg-rose-500/5 p-3">
+                    <p className="whitespace-pre-wrap text-sm leading-relaxed text-rose-200/80">{jobDetail.job.errorMessage}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Attempt info */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Attempts</p>
+                  <p className="mt-1 text-lg font-bold">{jobDetail.job.attemptCount ?? 0}</p>
+                </div>
+                <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Retryable</p>
+                  <p className="mt-1 text-lg font-bold">{jobDetail.job.retryable ? "Yes" : "No"}</p>
+                </div>
+              </div>
+
+              {/* Next retry */}
+              {jobDetail.job.nextRetryAt && (
+                <div className="flex items-center gap-2 rounded-lg border border-amber-400/20 bg-amber-500/5 p-3">
+                  <Clock className="h-4 w-4 text-amber-400" />
+                  <span className="text-sm text-amber-300">Next retry: {formatRelative(jobDetail.job.nextRetryAt)}</span>
+                </div>
+              )}
+
+              {/* Published at */}
+              {jobDetail.job.publishedAt && (
+                <div className="flex items-center gap-2 rounded-lg border border-emerald-400/20 bg-emerald-500/5 p-3">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                  <span className="text-sm text-emerald-300">Published: {formatRelative(jobDetail.job.publishedAt)}</span>
+                </div>
+              )}
+
+              {/* No error */}
+              {!jobDetail.job.errorCode && !jobDetail.job.errorMessage && jobDetail.job.status !== "SUCCESS" && (
+                <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-3 text-center text-sm text-muted-foreground">
+                  No error details available for this job.
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setJobDetail(null)}>Close</Button>
+        </DialogFooter>
+      </Dialog>
+
       {/* Full-screen publishing progress overlay */}
       {(progress || progressDone) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-lg border bg-card p-8 shadow-xl">
+          <div className="w-full max-w-md rounded-lg border bg-card p-6 shadow-xl sm:p-8">
             {!progressDone ? (
               <div className="flex flex-col items-center gap-4 text-center">
                 <div className="relative h-14 w-14">
                   <Loader2 className="h-14 w-14 animate-spin text-primary" />
                 </div>
                 <p className="text-lg font-semibold">Publishing {reviewVideo?.fileName}</p>
-                <p className="text-sm text-muted-foreground">{progress?.label ?? "Processing…"}</p>
+
+                {/* Step tracker */}
+                <div className="w-full space-y-1.5">
+                  {[
+                    { key: "download", label: "Downloading video", icon: "📥" },
+                    { key: "edit", label: "Processing video", icon: "✂️" },
+                    { key: "upload:YOUTUBE", label: "Uploading to YouTube", icon: "▶️" },
+                    { key: "upload:TIKTOK", label: "Uploading to TikTok", icon: "🎵" },
+                    { key: "upload:INSTAGRAM", label: "Uploading to Instagram", icon: "📸" },
+                    { key: "upload:FACEBOOK", label: "Uploading to Facebook", icon: "👥" },
+                  ].map((step) => {
+                    const isCurrent = progress?.stage === step.key;
+                    const stageOrder = ["download", "edit", "upload:YOUTUBE", "upload:TIKTOK", "upload:INSTAGRAM", "upload:FACEBOOK"];
+                    const currentIdx = stageOrder.indexOf(progress?.stage ?? "");
+                    const stepIdx = stageOrder.indexOf(step.key);
+                    const isDone = stepIdx < currentIdx;
+                    const isVisible = isCurrent || isDone || stepIdx <= currentIdx + 1;
+
+                    if (!isVisible) return null;
+
+                    return (
+                      <div
+                        key={step.key}
+                        className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-all ${
+                          isCurrent
+                            ? "border border-brand-fuchsia/30 bg-brand-fuchsia/10 text-brand-fuchsia"
+                            : isDone
+                            ? "border border-emerald-400/20 bg-emerald-500/5 text-emerald-300"
+                            : "border border-white/[0.04] bg-white/[0.01] text-muted-foreground"
+                        }`}
+                      >
+                        <span className="text-base">{step.icon}</span>
+                        <span className="flex-1 text-left font-medium">{step.label}</span>
+                        {isDone && <CheckCircle2 className="h-4 w-4 text-emerald-400" />}
+                        {isCurrent && <Loader2 className="h-4 w-4 animate-spin" />}
+                      </div>
+                    );
+                  })}
+                </div>
+
                 <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
                   <div className="h-full w-1/3 animate-[indeterminate_1.2s_ease-in-out_infinite] rounded-full bg-primary" />
                 </div>
                 <p className="text-xs text-muted-foreground">
                   {progress?.stage === "edit"
                     ? "This can take a minute — cropping, adding hook, and mixing sound."
-                    : "Uploading may take a moment depending on video size."}
+                    : progress?.stage?.startsWith("upload:")
+                    ? "Uploading may take a moment depending on video size."
+                    : "Processing..."}
                 </p>
               </div>
             ) : progressDone.ok ? (
               <div className="flex flex-col items-center gap-3 text-center">
-                <CheckCircle2 className="h-12 w-12 text-green-500" />
-                <p className="text-lg font-semibold">Posted!</p>
+                <CheckCircle2 className="h-12 w-12 text-emerald-400" />
+                <p className="text-lg font-semibold">Posted successfully!</p>
                 <div className="w-full space-y-1.5">
                   {(progressDone.results ?? []).map((r) => (
-                    <div key={r.platform} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
-                      <span>{r.platform}</span>
-                      <span className={r.status === "SUCCESS" ? "text-green-500" : "text-red-500"}>{r.status}</span>
+                    <div key={r.platform} className="flex items-center justify-between rounded-md border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-sm">
+                      <span className="font-medium">{r.platform}</span>
+                      <span className={r.status === "SUCCESS" ? "font-semibold text-emerald-400" : "font-semibold text-rose-400"}>
+                        {r.status === "SUCCESS" ? "Published" : "Failed"}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -676,7 +834,7 @@ export default function QueuePage() {
               </div>
             ) : (
               <div className="flex flex-col items-center gap-3 text-center">
-                <XCircle className="h-12 w-12 text-red-500" />
+                <XCircle className="h-12 w-12 text-rose-400" />
                 <p className="text-lg font-semibold">Posting failed</p>
                 <p className="text-sm text-muted-foreground">{progressDone.error ?? "Something went wrong."}</p>
                 <Button className="mt-2" variant="outline" onClick={() => setProgressDone(null)}>

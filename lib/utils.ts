@@ -92,6 +92,26 @@ export function truncate(str: string, max: number): string {
   return str.length > max ? `${str.slice(0, max - 3)}...` : str;
 }
 
+/** Strip AI thinking/reasoning artifacts from a display title. */
+export function cleanTitle(title: string | null | undefined): string | null {
+  if (!title) return null;
+  let cleaned = title;
+  // Remove <think>...</think> blocks
+  cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  // Remove "Here's a thinking process" and everything after it until real content
+  cleaned = cleaned.replace(/^Here's?\s+(?:a\s+)?thinking[\s\S]*$/gim, "").trim();
+  // Remove step-by-step reasoning lines
+  const lines = cleaned.split("\n").filter((line) => {
+    const t = line.trim();
+    if (/^\d+[\.\)]\s*\*{0,2}(Analyze|Check|Consider|Determine|Evaluate|Identify|Look|Review|Write|Task|Input|Requirements)/i.test(t)) return false;
+    if (/^\*{2}(Analyze|Check|Consider|Determine|Evaluate|Identify|Look|Review|Write|Task|Input|Requirements)/i.test(t)) return false;
+    return true;
+  });
+  cleaned = lines.join("\n").trim();
+  // If nothing meaningful left, return null so caller can fallback to fileName
+  return cleaned.length > 0 ? cleaned : null;
+}
+
 export function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === "string") return error;

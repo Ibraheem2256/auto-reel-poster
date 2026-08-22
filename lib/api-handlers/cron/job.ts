@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { verifyCronRequest } from "@/lib/api";
 import { scanAllSources } from "@/lib/drive";
 import { enqueueValidatedVideos, assignJobsForAllWorkspaces, assignJobsForWorkspace, processDueJobs, checkInFlightJobs, processRetryQueue, cleanupStaleData } from "@/lib/scheduler";
+import { ensureQueuedVideoTitles } from "@/lib/content";
 import { cleanupExpiredTempFiles } from "@/lib/storage";
 import { prisma } from "@/lib/prisma";
 import { getPublisher } from "@/lib/publishers/index";
@@ -22,6 +23,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ job
       case "scan": {
         const scan = await scanAllSources();
         const queued = await assignJobsForAllWorkspaces();
+        // Clean up bad AI titles and generate new ones for queued videos
+        const workspaces = await prisma.workspace.findMany({ where: { automationEnabled: true } });
+        for (const ws of workspaces) {
+          try {
+            await ensureQueuedVideoTitles(ws.id, 10);
+          } catch (err) {
+            logger.warn("title_cleanup_failed", { workspaceId: ws.id, error: String(err) });
+          }
+        }
         return NextResponse.json({ ok: true, scan, queued });
       }
       case "publish": {
