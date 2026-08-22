@@ -303,10 +303,31 @@ export async function assignJobsForWorkspace(workspaceId: string): Promise<{ sch
   if (queued.length === 0) return { scheduled: 0 };
 
   // Build one combined slot list across all enabled schedules.
+  // Also enforce postsPerDay limit: count how many jobs each schedule already
+  // has for today (published + pending + processing) and only generate slots
+  // for the remaining capacity.
   const now = new Date();
   const slots: Date[] = [];
+
   for (const schedule of schedules) {
-    slots.push(...await nextSlotsForSchedule(schedule, now, Math.min(queued.length, 50), workspaceId));
+    const tz = schedule.timezone;
+    const dayStart = startOfZonedDay(now, tz);
+
+    // Count jobs already published or pending for today under this schedule
+    const todayJobCount = await prisma.platformJob.count({
+      where: {
+        workspaceId,
+        status: { in: ["SUCCESS", "PENDING", "PROCESSING", "RETRYING"] },
+        scheduledAt: { gte: dayStart },
+        scheduledPost: { schedule: { id: schedule.id } },
+      },
+    });
+
+    const remaining = Math.max(0, schedule.postsPerDay - todayJobCount);
+    if (remaining === 0) continue;
+
+    const newSlots = await nextSlotsForSchedule(schedule, now, Math.min(remaining, 50), workspaceId);
+    slots.push(...newSlots);
   }
   slots.sort((a, b) => a.getTime() - b.getTime());
 
