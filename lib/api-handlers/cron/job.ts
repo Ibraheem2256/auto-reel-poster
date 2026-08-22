@@ -35,8 +35,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ job
         return NextResponse.json({ ok: true, scan, queued });
       }
       case "publish": {
+        // Clean excess jobs before processing to enforce daily limits
+        const cleaned = await cleanupStaleData();
         const result = await processDueJobs();
-        return NextResponse.json({ ok: true, ...result });
+        return NextResponse.json({ ok: true, cleaned, ...result });
       }
       case "check-status": {
         const resolved = await checkInFlightJobs();

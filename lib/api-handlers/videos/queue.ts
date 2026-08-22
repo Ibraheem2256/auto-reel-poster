@@ -17,7 +17,17 @@ export async function GET(req: NextRequest) {
       include: {
         scheduledPost: { select: { scheduledAt: true } },
         platformJobs: {
-          select: { id: true, platform: true, status: true },
+          select: {
+            id: true,
+            platform: true,
+            status: true,
+            errorCode: true,
+            errorMessage: true,
+            attemptCount: true,
+            nextRetryAt: true,
+            retryable: true,
+            publishedAt: true,
+          },
           orderBy: { createdAt: "asc" },
         },
       },

@@ -479,15 +479,69 @@ export async function processDueJobs(batchSize = 10): Promise<{ processed: numbe
   let processed = 0;
   let failed = 0;
 
+  // Group claimed jobs by workspace to enforce per-workspace daily limits
+  const jobsByWorkspace = new Map<string, RichJob[]>();
   for (const job of jobs) {
-    try {
-      await runJob(job);
-      processed += 1;
-    } catch (err) {
-      failed += 1;
-      logger.error("job_unhandled_error", { jobId: job.id, error: getErrorMessage(err) });
+    const list = jobsByWorkspace.get(job.workspaceId) ?? [];
+    list.push(job);
+    jobsByWorkspace.set(job.workspaceId, list);
+  }
+
+  for (const [workspaceId, wsJobs] of jobsByWorkspace) {
+    const workspace = wsJobs[0].workspace;
+
+    // Check daily limit: count how many jobs already succeeded today
+    const todayStart = startOfZonedDay(new Date(), workspace.timezone ?? "UTC");
+    const publishedToday = await prisma.platformJob.count({
+      where: {
+        workspaceId,
+        status: "SUCCESS",
+        publishedAt: { gte: todayStart },
+      },
+    });
+
+    // Get the max postsPerDay across all schedules for this workspace
+    const schedules = await prisma.schedule.findMany({
+      where: { workspaceId, enabled: true },
+      select: { postsPerDay: true },
+    });
+    const maxPerDay = schedules.length > 0
+      ? Math.max(...schedules.map((s) => s.postsPerDay))
+      : 3;
+
+    const remaining = Math.max(0, maxPerDay - publishedToday);
+    if (remaining === 0) {
+      // Daily limit reached - cancel remaining PENDING jobs for today
+      for (const job of wsJobs) {
+        await prisma.platformJob.update({
+          where: { id: job.id },
+          data: { status: "CANCELLED", errorCode: "DAILY_LIMIT", errorMessage: `Daily limit of ${maxPerDay} posts reached.` },
+        });
+      }
+      continue;
+    }
+
+    // Only process up to remaining jobs
+    const toProcess = wsJobs.slice(0, remaining);
+    for (const job of toProcess) {
+      try {
+        await runJob(job);
+        processed += 1;
+      } catch (err) {
+        failed += 1;
+        logger.error("job_unhandled_error", { jobId: job.id, error: getErrorMessage(err) });
+      }
+    }
+
+    // Cancel excess jobs
+    for (const job of wsJobs.slice(remaining)) {
+      await prisma.platformJob.update({
+        where: { id: job.id },
+        data: { status: "CANCELLED", errorCode: "DAILY_LIMIT", errorMessage: `Daily limit of ${maxPerDay} posts reached.` },
+      });
     }
   }
+
   return { processed, failed };
 }
 
@@ -997,6 +1051,68 @@ export async function cleanupStaleData(): Promise<number> {
     for (const key of affectedVideos.keys()) {
       const [wsId, vidId] = key.split(":");
       await refreshVideoStatus(wsId, vidId);
+    }
+  }
+
+  // 4. Cancel excess PENDING jobs that exceed daily limits
+  const workspaces = await prisma.workspace.findMany({
+    where: { paused: false },
+    select: {
+      id: true,
+      timezone: true,
+      schedules: { where: { enabled: true }, select: { postsPerDay: true } },
+    },
+  });
+
+  for (const ws of workspaces) {
+    if (ws.schedules.length === 0) continue;
+    const maxPerDay = Math.max(...ws.schedules.map((s) => s.postsPerDay));
+
+    const todayStart = startOfZonedDay(new Date(), ws.timezone ?? "UTC");
+
+    const [publishedToday, pendingToday] = await Promise.all([
+      prisma.platformJob.count({
+        where: { workspaceId: ws.id, status: "SUCCESS", publishedAt: { gte: todayStart } },
+      }),
+      prisma.platformJob.findMany({
+        where: {
+          workspaceId: ws.id,
+          status: "PENDING",
+          scheduledAt: { gte: todayStart, lt: new Date(todayStart.getTime() + 86_400_000) },
+        },
+        orderBy: { scheduledAt: "asc" },
+        select: { id: true },
+      }),
+    ]);
+
+    const alreadyDone = publishedToday;
+    const excess = Math.max(0, pendingToday.length + alreadyDone - maxPerDay);
+
+    if (excess > 0) {
+      const toCancel = pendingToday.slice(pendingToday.length - excess);
+      await prisma.platformJob.updateMany({
+        where: { id: { in: toCancel.map((j) => j.id) } },
+        data: { status: "CANCELLED", errorCode: "DAILY_LIMIT_EXCESS", errorMessage: `Cancelled ${excess} excess jobs. Daily limit is ${maxPerDay}.` },
+      });
+      cleaned += excess;
+    }
+
+    // Also cancel PENDING jobs with past scheduledAt that shouldn't have been created
+    const pastPending = await prisma.platformJob.findMany({
+      where: {
+        workspaceId: ws.id,
+        status: "PENDING",
+        scheduledAt: { lt: todayStart },
+      },
+      select: { id: true },
+    });
+
+    if (pastPending.length > 0) {
+      await prisma.platformJob.updateMany({
+        where: { id: { in: pastPending.map((j) => j.id) } },
+        data: { status: "CANCELLED", errorCode: "PAST_DUE_EXCESS", errorMessage: "Job scheduled for a past time." },
+      });
+      cleaned += pastPending.length;
     }
   }
 

@@ -27,3 +27,5 @@ graph-debug*.ts
 *.mp3
 *.onnx
 *.tflite
+.vercel
+.env*
