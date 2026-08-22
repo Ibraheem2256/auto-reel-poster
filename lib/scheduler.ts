@@ -726,17 +726,30 @@ export async function checkInFlightJobs(maxAgeMs = 30 * 60_000): Promise<number>
       status: "PROCESSING",
       startedAt: { lt: new Date(Date.now() - maxAgeMs) },
     },
-    take: 20,
+    take: 50,
   });
   let resolved = 0;
   for (const job of stale) {
     try {
+      // Force-cancel jobs stuck for more than 24 hours — they'll never complete.
+      const ageMs = Date.now() - new Date(job.startedAt!).getTime();
+      if (ageMs > 24 * 60 * 60_000) {
+        await prisma.platformJob.update({
+          where: { id: job.id },
+          data: { status: "FAILED", errorCode: "STUCK_TIMEOUT", errorMessage: "Job stuck in PROCESSING for over 24 hours. Force-cancelled." },
+        });
+        await refreshVideoStatus(job.workspaceId, job.videoId);
+        resolved += 1;
+        continue;
+      }
+
       if (!job.platformPostId) {
         // Upload never confirmed; treat as retryable failure.
         await prisma.platformJob.update({
           where: { id: job.id },
           data: { status: "RETRYING", nextRetryAt: new Date(Date.now() + 5 * 60_000), errorCode: "TIMEOUT", errorMessage: "Upload did not complete within the timeout." },
         });
+        resolved += 1;
         continue;
       }
       const status = await getPublisher(job.platform).checkStatus(job.workspaceId, job.platformPostId, job.videoId);
