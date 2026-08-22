@@ -940,7 +940,7 @@ export async function cleanupStaleData(): Promise<number> {
     select: { id: true, workspaceId: true, videoId: true },
   });
 
-  // Also find old ScheduledPosts that are past due and have NO pending/processing jobs
+  // Also find old ScheduledPosts that are past due
   // These are orphaned posts that block videos from being rescheduled
   const staleScheduledPosts = await prisma.scheduledPost.findMany({
     where: {
@@ -950,21 +950,36 @@ export async function cleanupStaleData(): Promise<number> {
     select: { id: true, videoId: true, workspaceId: true },
   });
 
-  // Filter to only those without active jobs
+  // Cancel ALL PlatformJobs for stale scheduledPosts and delete them
   const staleIds: string[] = [];
   const staleVideoIds: string[] = [];
   for (const sp of staleScheduledPosts) {
-    const activeJobs = await prisma.platformJob.count({
-      where: {
-        scheduledPostId: sp.id,
-        status: { in: ["PENDING", "PROCESSING", "RETRYING"] },
-      },
-    });
-    if (activeJobs === 0) {
-      staleIds.push(sp.id);
-      staleVideoIds.push(sp.videoId);
-    }
+    staleIds.push(sp.id);
+    staleVideoIds.push(sp.videoId);
   }
+
+  if (staleIds.length > 0) {
+    // Cancel all PENDING/RETRYING jobs for these scheduled posts
+    await prisma.platformJob.updateMany({
+      where: {
+        scheduledPostId: { in: staleIds },
+        status: { in: ["PENDING", "RETRYING"] },
+      },
+      data: { status: "CANCELLED", errorCode: "STALE_SCHEDULE", errorMessage: "ScheduledPost was older than 2 days." },
+    });
+
+    // Delete the stale scheduled posts
+    await prisma.scheduledPost.deleteMany({ where: { id: { in: staleIds } } });
+
+    // Reset video status back to QUEUED so they can be picked up again
+    const videoIds = [...new Set(staleVideoIds)];
+    await prisma.video.updateMany({
+      where: { id: { in: videoIds }, status: "SCHEDULED" },
+      data: { status: "QUEUED", scheduledAt: null },
+    });
+  }
+
+  if (staleJobs.length === 0 && staleIds.length === 0) return 0;
 
   // Delete orphaned scheduled posts so videos can be rescheduled
   if (staleIds.length > 0) {
