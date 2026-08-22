@@ -8,7 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { getPublisher } from "@/lib/publishers/index";
 import { logger } from "@/lib/logger";
 
-const JOBS = ["scan", "publish", "check-status", "retry", "cleanup", "token-check"] as const;
+const JOBS = ["scan", "publish", "check-status", "retry", "cleanup", "token-check", "debug"] as const;
 type JobName = (typeof JOBS)[number];
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ job: string }> }) {
@@ -66,6 +66,31 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ job
           }
         }
         return NextResponse.json({ ok: true, refreshed });
+      }
+      case "debug": {
+        const now = new Date();
+        const [jobStatusCounts, workspace, dueJobs, stalledJobs] = await Promise.all([
+          prisma.platformJob.groupBy({ by: ["status"], _count: { _all: true } }),
+          prisma.workspace.findFirst({ select: { id: true, automationEnabled: true, paused: true } }),
+          prisma.platformJob.findMany({
+            where: { status: "PENDING", scheduledAt: { lte: now } },
+            take: 5,
+            select: { id: true, scheduledAt: true, platform: true, videoId: true },
+          }),
+          prisma.platformJob.findMany({
+            where: { status: "PROCESSING" },
+            take: 5,
+            select: { id: true, startedAt: true, platform: true },
+          }),
+        ]);
+        return NextResponse.json({
+          ok: true,
+          jobStatusCounts,
+          workspace: workspace ? { id: workspace.id, automationEnabled: workspace.automationEnabled, paused: workspace.paused } : null,
+          dueJobsNow: dueJobs,
+          stalledProcessing: stalledJobs,
+          serverTime: now.toISOString(),
+        });
       }
     }
   } catch (err) {
