@@ -944,7 +944,7 @@ export async function cleanupStaleData(): Promise<number> {
   // These are orphaned posts that block videos from being rescheduled
   const staleScheduledPosts = await prisma.scheduledPost.findMany({
     where: {
-      scheduledAt: { lt: new Date(Date.now() - 2 * 86_400_000) },
+      scheduledAt: { lt: new Date(Date.now() - 86_400_000) },
       status: "SCHEDULED",
     },
     select: { id: true, videoId: true, workspaceId: true },
