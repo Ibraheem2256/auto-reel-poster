@@ -69,7 +69,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ job
       }
       case "debug": {
         const now = new Date();
-        const [jobStatusCounts, workspace, dueJobs, stalledJobs] = await Promise.all([
+        const [jobStatusCounts, workspace, dueJobs, stalledJobs, scheduledPosts, pendingJobCount] = await Promise.all([
           prisma.platformJob.groupBy({ by: ["status"], _count: { _all: true } }),
           prisma.workspace.findFirst({ select: { id: true, automationEnabled: true, paused: true } }),
           prisma.platformJob.findMany({
@@ -82,6 +82,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ job
             take: 5,
             select: { id: true, startedAt: true, platform: true },
           }),
+          prisma.scheduledPost.findMany({
+            where: { scheduledAt: { lte: now }, status: "SCHEDULED" },
+            take: 5,
+            select: { id: true, scheduledAt: true, videoId: true, scheduleId: true },
+          }),
+          prisma.platformJob.count({ where: { status: "PENDING" } }),
         ]);
         return NextResponse.json({
           ok: true,
@@ -89,6 +95,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ job
           workspace: workspace ? { id: workspace.id, automationEnabled: workspace.automationEnabled, paused: workspace.paused } : null,
           dueJobsNow: dueJobs,
           stalledProcessing: stalledJobs,
+          scheduledPostsDueNow: scheduledPosts,
+          totalPendingJobs: pendingJobCount,
           serverTime: now.toISOString(),
         });
       }
