@@ -942,32 +942,43 @@ export async function cleanupStaleData(): Promise<number> {
 
   // Also find old ScheduledPosts that are past due and have NO pending/processing jobs
   // These are orphaned posts that block videos from being rescheduled
-  const staleScheduledPosts = await prisma.$queryRaw<{ id: string; videoId: string; workspaceId: string }[]>`
-    SELECT sp.id, sp."videoId", sp."workspaceId"
-    FROM "ScheduledPost" sp
-    WHERE sp."scheduledAt" < NOW() - INTERVAL '2 days'
-      AND sp.status = 'SCHEDULED'
-      AND NOT EXISTS (
-        SELECT 1 FROM "PlatformJob" pj
-        WHERE pj."scheduledPostId" = sp.id
-          AND pj.status IN ('PENDING', 'PROCESSING', 'RETRYING')
-      )
-  `;
+  const staleScheduledPosts = await prisma.scheduledPost.findMany({
+    where: {
+      scheduledAt: { lt: new Date(Date.now() - 2 * 86_400_000) },
+      status: "SCHEDULED",
+    },
+    select: { id: true, videoId: true, workspaceId: true },
+  });
+
+  // Filter to only those without active jobs
+  const staleIds: string[] = [];
+  const staleVideoIds: string[] = [];
+  for (const sp of staleScheduledPosts) {
+    const activeJobs = await prisma.platformJob.count({
+      where: {
+        scheduledPostId: sp.id,
+        status: { in: ["PENDING", "PROCESSING", "RETRYING"] },
+      },
+    });
+    if (activeJobs === 0) {
+      staleIds.push(sp.id);
+      staleVideoIds.push(sp.videoId);
+    }
+  }
 
   // Delete orphaned scheduled posts so videos can be rescheduled
-  if (staleScheduledPosts.length > 0) {
-    const staleIds = staleScheduledPosts.map((sp) => sp.id);
+  if (staleIds.length > 0) {
     await prisma.scheduledPost.deleteMany({ where: { id: { in: staleIds } } });
 
     // Reset video status back to QUEUED so they can be picked up again
-    const videoIds = [...new Set(staleScheduledPosts.map((sp) => sp.videoId))];
+    const videoIds = [...new Set(staleVideoIds)];
     await prisma.video.updateMany({
       where: { id: { in: videoIds }, status: "SCHEDULED" },
       data: { status: "QUEUED", scheduledAt: null },
     });
   }
 
-  if (staleJobs.length === 0 && staleScheduledPosts.length === 0) return 0;
+  if (staleJobs.length === 0 && staleIds.length === 0) return 0;
 
   await prisma.platformJob.updateMany({
     where: {
