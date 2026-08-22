@@ -19,6 +19,34 @@ interface AiRequest {
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 2000;
 
+/** Strip AI thinking/reasoning blocks from model responses. */
+function stripThinking(text: string): string {
+  let cleaned = text;
+  // Remove <think>...</think> blocks (some models use this)
+  cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  // Remove **Thinking:** or **Reasoning:** blocks until next content
+  cleaned = cleaned.replace(/^\*{0,2}(?:Thinking|Reasoning|Analysis)[\s\S]*?(?:\n\*{0,2}[A-Z]|\n\n)/gim, "").trim();
+  // Remove lines that look like step-by-step reasoning before the actual content
+  const lines = cleaned.split("\n");
+  const contentStart = lines.findIndex((line) => {
+    const trimmed = line.trim();
+    // Skip lines that are reasoning steps
+    if (/^\d+[\.\)]\s*\*{0,2}(Analyze|Check|Consider|Determine|Evaluate|Identify|Look|Review|Write|Task|Input|Requirements)/i.test(trimmed)) return false;
+    if (/^\*{2}(Analyze|Check|Consider|Determine|Evaluate|Identify|Look|Review|Write|Task|Input|Requirements)/i.test(trimmed)) return false;
+    if (/^Here's?\s+(?:a\s+)?thinking/i.test(trimmed)) return false;
+    return trimmed.length > 0;
+  });
+  if (contentStart > 0) {
+    cleaned = lines.slice(contentStart).join("\n").trim();
+  }
+  // If still looks like reasoning, take last non-empty line as fallback
+  if (/^(Here's|Let me|I need|First|Step|The |To |For )/i.test(cleaned) && cleaned.length > 200) {
+    const lastLines = cleaned.split("\n").filter((l) => l.trim().length > 0 && l.trim().length < 80);
+    if (lastLines.length > 0) cleaned = lastLines[lastLines.length - 1].trim();
+  }
+  return cleaned;
+}
+
 async function complete(req: AiRequest, attempt = 0): Promise<string> {
   const apiKey = process.env.AI_API_KEY;
   const baseUrl = process.env.AI_BASE_URL ?? "https://api.openai.com/v1";
@@ -67,7 +95,8 @@ async function complete(req: AiRequest, attempt = 0): Promise<string> {
     throw new Error("AI generation failed.");
   }
   const data = await res.json().catch(() => null);
-  return data?.choices?.[0]?.message?.content?.trim() ?? "";
+  const raw = data?.choices?.[0]?.message?.content?.trim() ?? "";
+  return stripThinking(raw);
 }
 
 export async function generateCaption(opts: {
@@ -295,8 +324,15 @@ export async function generateViralContent(opts: {
           .filter(Boolean)
           .slice(0, 10)
       : [];
-  const title = titleRes.trim() ? titleRes.trim() : "";
+  let title = titleRes.trim() ? titleRes.trim() : "";
   const description = descRes.trim() ? descRes.trim() : "";
+
+  // Safety: if title still contains thinking artifacts or is too long, truncate
+  if (title.length > 70) {
+    title = title.slice(0, 67).replace(/\s+\S*$/, "") + "...";
+  }
+  // Remove any leading numbering/bullet artifacts
+  title = title.replace(/^[\d\.\)\-\*]+\s*/, "").trim();
 
   return { caption, hashtags, title, description };
 }

@@ -120,12 +120,30 @@ export async function buildContentFor(input: CaptionBuilderInput): Promise<Gener
 
 /**
  * Generate and persist titles for queued videos that don't have one yet.
+ * Also cleans up titles that contain AI thinking artifacts.
  * Runs at most `limit` generations per call so API responses stay fast;
  * the remaining videos get titles on subsequent calls.
  * Only stores real AI titles — never the filename fallback.
  */
 export async function ensureQueuedVideoTitles(workspaceId: string, limit = 5): Promise<number> {
   const prisma = (await import("@/lib/prisma")).prisma;
+
+  // First, clean up any existing titles that contain thinking artifacts
+  const badTitles = await prisma.video.findMany({
+    where: {
+      workspaceId,
+      title: { contains: "thinking process" },
+      status: { in: ["QUEUED", "SCHEDULED", "VALIDATED"] },
+    },
+    select: { id: true },
+  });
+  if (badTitles.length > 0) {
+    await prisma.video.updateMany({
+      where: { id: { in: badTitles.map((v) => v.id) } },
+      data: { title: null },
+    });
+  }
+
   const videos = await prisma.video.findMany({
     where: {
       workspaceId,

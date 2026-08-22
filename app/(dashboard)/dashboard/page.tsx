@@ -8,6 +8,7 @@ import { VideoStatusBadge } from "@/components/status-badges";
 import { PlatformIcon } from "@/components/platform-icons";
 import { EmptyState, StatCardSkeleton, Skeleton } from "@/components/ui/states";
 import { Button } from "@/components/ui/button";
+import NextUploadTimer from "@/components/next-upload-timer";
 import { formatRelative } from "@/lib/utils";
 import { PLATFORM_LABELS } from "@/lib/constants";
 import {
@@ -196,11 +197,11 @@ export default function DashboardPage() {
     <div className="space-y-6">
       {/* Hero */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between animate-fade-in-up">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-widest text-brand-fuchsia/80">
+        <div className="min-w-0">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-brand-fuchsia/80 sm:text-xs">
             {today}
           </p>
-          <h1 className="mt-1 font-display text-2xl font-bold tracking-tight sm:text-3xl">
+          <h1 className="mt-1 truncate font-display text-xl font-bold tracking-tight sm:text-2xl lg:text-3xl">
             {greeting()}
             {userName ? (
               <>
@@ -234,6 +235,14 @@ export default function DashboardPage() {
         )}
       </div>
 
+      {/* Big countdown timer */}
+      <div className="animate-fade-in-up">
+        <NextUploadTimer
+          scheduledAt={nextScheduled?.scheduledPost?.scheduledAt ?? null}
+          videoName={nextScheduled ? (nextScheduled.title || nextScheduled.fileName) : null}
+        />
+      </div>
+
       {/* Setup checklist */}
       {!allSetUp && (
         <Card className="animate-fade-in-up">
@@ -258,7 +267,7 @@ export default function DashboardPage() {
                 <Link
                   key={step.key}
                   href={step.href}
-                  className={`group relative flex flex-col gap-1.5 rounded-xl border p-3 transition-all duration-200 ${
+                  className={`group relative flex gap-2 rounded-xl border p-3 transition-all duration-200 sm:flex-col sm:gap-1.5 ${
                     step.done
                       ? "border-emerald-400/15 bg-emerald-500/5"
                       : "border-white/[0.06] bg-white/[0.02] hover:border-brand-violet/40 hover:bg-brand-violet/5"
@@ -290,7 +299,7 @@ export default function DashboardPage() {
       )}
 
       {/* Stats */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-3 lg:grid-cols-6">
         <StatCard label="Videos in Queue" value={data.stats.videosInQueue} icon={<ListVideo className="h-3.5 w-3.5" />} />
         <StatCard label="Scheduled Today" value={data.stats.scheduledToday} icon={<CalendarDays className="h-3.5 w-3.5" />} />
         <StatCard label="Posted Today" value={data.stats.postedToday} tone="success" icon={<Send className="h-3.5 w-3.5" />} />
@@ -306,7 +315,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Chart + platform health */}
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-4 sm:gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader className="flex-row items-center justify-between space-y-0">
             <div>
@@ -407,14 +416,20 @@ export default function DashboardPage() {
       </div>
 
       {/* Queue + quick actions */}
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-4 sm:gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader className="flex-row items-center justify-between space-y-0">
             <div>
               <CardTitle className="text-base">Next up</CardTitle>
               <p className="mt-0.5 text-xs text-muted-foreground">
                 {nextScheduled
-                  ? `Next post in ${formatRelative(nextScheduled.scheduledPost!.scheduledAt)}`
+                  ? (() => {
+                      const scheduledAt = nextScheduled.scheduledPost!.scheduledAt;
+                      const isPast = new Date(scheduledAt).getTime() < Date.now();
+                      return isPast
+                        ? `Overdue: ${formatRelative(scheduledAt)}`
+                        : `Next post in ${formatRelative(scheduledAt)}`;
+                    })()
                   : "Your content pipeline"}
               </p>
             </div>
@@ -444,7 +459,7 @@ export default function DashboardPage() {
               queue.slice(0, 5).map((v) => (
                 <div
                   key={v.id}
-                  className="flex items-center gap-3 rounded-lg border border-white/[0.06] bg-white/[0.02] p-2.5 transition-all duration-200 hover:border-brand-violet/30 hover:bg-brand-violet/5"
+                  className="flex items-center gap-2.5 rounded-lg border border-white/[0.06] bg-white/[0.02] p-2.5 transition-all duration-200 hover:border-brand-violet/30 hover:bg-brand-violet/5 sm:gap-3"
                 >
                   {v.thumbnailUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -453,10 +468,10 @@ export default function DashboardPage() {
                       alt=""
                       loading="lazy"
                       decoding="async"
-                      className="h-10 w-10 rounded-md object-cover ring-1 ring-white/10"
+                      className="h-9 w-9 shrink-0 rounded-md object-cover ring-1 ring-white/10 sm:h-10 sm:w-10"
                     />
                   ) : (
-                    <div className="flex h-10 w-10 items-center justify-center rounded-md bg-gradient-to-br from-brand-violet/20 to-brand-fuchsia/20 text-[10px] font-semibold text-brand-fuchsia">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-brand-violet/20 to-brand-fuchsia/20 text-[10px] font-semibold text-brand-fuchsia sm:h-10 sm:w-10">
                       VID
                     </div>
                   )}
@@ -464,7 +479,7 @@ export default function DashboardPage() {
                     <p className="truncate text-sm font-medium">{v.title || v.fileName}</p>
                     <p className="text-xs text-muted-foreground">
                       {v.scheduledPost?.scheduledAt
-                        ? `Publishing ${formatRelative(v.scheduledPost.scheduledAt)}`
+                        ? formatRelative(v.scheduledPost.scheduledAt)
                         : `Detected ${formatRelative(v.detectedAt)}`}
                     </p>
                   </div>
