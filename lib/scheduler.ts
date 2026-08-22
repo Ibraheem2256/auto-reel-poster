@@ -935,19 +935,46 @@ export async function cleanupStaleData(): Promise<number> {
   const staleJobs = await prisma.platformJob.findMany({
     where: {
       status: { in: ["PENDING", "RETRYING"] },
-      scheduledAt: { lt: new Date(Date.now() - 7 * 86_400_000) },
+      scheduledAt: { lt: new Date(Date.now() - 2 * 86_400_000) },
     },
     select: { id: true, workspaceId: true, videoId: true },
   });
 
-  if (staleJobs.length === 0) return 0;
+  // Also find old ScheduledPosts that are past due and have NO pending/processing jobs
+  // These are orphaned posts that block videos from being rescheduled
+  const staleScheduledPosts = await prisma.$queryRaw<{ id: string; videoId: string; workspaceId: string }[]>`
+    SELECT sp.id, sp."videoId", sp."workspaceId"
+    FROM "ScheduledPost" sp
+    WHERE sp."scheduledAt" < NOW() - INTERVAL '2 days'
+      AND sp.status = 'SCHEDULED'
+      AND NOT EXISTS (
+        SELECT 1 FROM "PlatformJob" pj
+        WHERE pj."scheduledPostId" = sp.id
+          AND pj.status IN ('PENDING', 'PROCESSING', 'RETRYING')
+      )
+  `;
+
+  // Delete orphaned scheduled posts so videos can be rescheduled
+  if (staleScheduledPosts.length > 0) {
+    const staleIds = staleScheduledPosts.map((sp) => sp.id);
+    await prisma.scheduledPost.deleteMany({ where: { id: { in: staleIds } } });
+
+    // Reset video status back to QUEUED so they can be picked up again
+    const videoIds = [...new Set(staleScheduledPosts.map((sp) => sp.videoId))];
+    await prisma.video.updateMany({
+      where: { id: { in: videoIds }, status: "SCHEDULED" },
+      data: { status: "QUEUED", scheduledAt: null },
+    });
+  }
+
+  if (staleJobs.length === 0 && staleScheduledPosts.length === 0) return 0;
 
   await prisma.platformJob.updateMany({
     where: {
       status: { in: ["PENDING", "RETRYING"] },
-      scheduledAt: { lt: new Date(Date.now() - 7 * 86_400_000) },
+      scheduledAt: { lt: new Date(Date.now() - 2 * 86_400_000) },
     },
-    data: { status: "CANCELLED", errorCode: "STALE", errorMessage: "Job was never processed within 7 days." },
+    data: { status: "CANCELLED", errorCode: "STALE", errorMessage: "Job was never processed within 2 days." },
   });
 
   // Refresh video status for affected videos
