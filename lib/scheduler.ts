@@ -931,7 +931,9 @@ export async function processRetryQueue(): Promise<number> {
 
 /** Cleanup: cancel stale scheduled posts / mark videos whose jobs never started. */
 export async function cleanupStaleData(): Promise<number> {
-  // Find stale jobs before cancelling them
+  let cleaned = 0;
+
+  // 1. Find stale PENDING/RETRYING PlatformJobs older than 2 days
   const staleJobs = await prisma.platformJob.findMany({
     where: {
       status: { in: ["PENDING", "RETRYING"] },
@@ -940,8 +942,19 @@ export async function cleanupStaleData(): Promise<number> {
     select: { id: true, workspaceId: true, videoId: true },
   });
 
-  // Also find old ScheduledPosts that are past due
-  // These are orphaned posts that block videos from being rescheduled
+  if (staleJobs.length > 0) {
+    await prisma.platformJob.updateMany({
+      where: {
+        status: { in: ["PENDING", "RETRYING"] },
+        scheduledAt: { lt: new Date(Date.now() - 2 * 86_400_000) },
+      },
+      data: { status: "CANCELLED", errorCode: "STALE", errorMessage: "Job was never processed within 2 days." },
+    });
+    cleaned += staleJobs.length;
+  }
+
+  // 2. Find old ScheduledPosts that are past due (>1 day old)
+  //    Cancel their PlatformJobs and delete the scheduledPost so videos can be rescheduled
   const staleScheduledPosts = await prisma.scheduledPost.findMany({
     where: {
       scheduledAt: { lt: new Date(Date.now() - 86_400_000) },
@@ -950,68 +963,42 @@ export async function cleanupStaleData(): Promise<number> {
     select: { id: true, videoId: true, workspaceId: true },
   });
 
-  // Cancel ALL PlatformJobs for stale scheduledPosts and delete them
-  const staleIds: string[] = [];
-  const staleVideoIds: string[] = [];
-  for (const sp of staleScheduledPosts) {
-    staleIds.push(sp.id);
-    staleVideoIds.push(sp.videoId);
-  }
+  if (staleScheduledPosts.length > 0) {
+    const staleIds = staleScheduledPosts.map((sp) => sp.id);
+    const videoIds = [...new Set(staleScheduledPosts.map((sp) => sp.videoId))];
 
-  if (staleIds.length > 0) {
     // Cancel all PENDING/RETRYING jobs for these scheduled posts
     await prisma.platformJob.updateMany({
       where: {
         scheduledPostId: { in: staleIds },
-        status: { in: ["PENDING", "RETRYING"] },
+        status: { in: ["PENDING", "RETRYING", "PROCESSING"] },
       },
-      data: { status: "CANCELLED", errorCode: "STALE_SCHEDULE", errorMessage: "ScheduledPost was older than 2 days." },
+      data: { status: "CANCELLED", errorCode: "STALE_SCHEDULE", errorMessage: "ScheduledPost was older than 1 day." },
     });
 
     // Delete the stale scheduled posts
     await prisma.scheduledPost.deleteMany({ where: { id: { in: staleIds } } });
 
     // Reset video status back to QUEUED so they can be picked up again
-    const videoIds = [...new Set(staleVideoIds)];
     await prisma.video.updateMany({
       where: { id: { in: videoIds }, status: "SCHEDULED" },
       data: { status: "QUEUED", scheduledAt: null },
     });
+
+    cleaned += staleScheduledPosts.length;
   }
 
-  if (staleJobs.length === 0 && staleIds.length === 0) return 0;
-
-  // Delete orphaned scheduled posts so videos can be rescheduled
-  if (staleIds.length > 0) {
-    await prisma.scheduledPost.deleteMany({ where: { id: { in: staleIds } } });
-
-    // Reset video status back to QUEUED so they can be picked up again
-    const videoIds = [...new Set(staleVideoIds)];
-    await prisma.video.updateMany({
-      where: { id: { in: videoIds }, status: "SCHEDULED" },
-      data: { status: "QUEUED", scheduledAt: null },
-    });
+  // 3. Refresh video status for affected videos from stale jobs
+  if (staleJobs.length > 0) {
+    const affectedVideos = new Map<string, string>();
+    for (const job of staleJobs) {
+      affectedVideos.set(`${job.workspaceId}:${job.videoId}`, `${job.workspaceId}:${job.videoId}`);
+    }
+    for (const key of affectedVideos.keys()) {
+      const [wsId, vidId] = key.split(":");
+      await refreshVideoStatus(wsId, vidId);
+    }
   }
 
-  if (staleJobs.length === 0 && staleIds.length === 0) return 0;
-
-  await prisma.platformJob.updateMany({
-    where: {
-      status: { in: ["PENDING", "RETRYING"] },
-      scheduledAt: { lt: new Date(Date.now() - 2 * 86_400_000) },
-    },
-    data: { status: "CANCELLED", errorCode: "STALE", errorMessage: "Job was never processed within 2 days." },
-  });
-
-  // Refresh video status for affected videos
-  const affectedVideos = new Map<string, string>(); // workspaceId -> videoId
-  for (const job of staleJobs) {
-    affectedVideos.set(`${job.workspaceId}:${job.videoId}`, `${job.workspaceId}:${job.videoId}`);
-  }
-  for (const key of affectedVideos.keys()) {
-    const [wsId, vidId] = key.split(":");
-    await refreshVideoStatus(wsId, vidId);
-  }
-
-  return staleJobs.length;
+  return cleaned;
 }
